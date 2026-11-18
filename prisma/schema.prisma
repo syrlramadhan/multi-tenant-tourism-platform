@@ -1,0 +1,621 @@
+// This is your Prisma schema file for Multi-Tenant Tourism CMS
+// Shared Application & Shared Database Architecture
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ContentStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// -----------------------------------------------------------------------------
+// CORE & MULTI-TENANCY
+// -----------------------------------------------------------------------------
+
+model Tenant {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  description String?
+  status      TenantStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  domains         TenantDomain[]
+  userTenants     UserTenant[]
+  features        TenantFeature[]
+  websiteSettings WebsiteSetting?
+  activityLogs    ActivityLog[]
+  mediaItems      Media[]
+  approvals       ContentApproval[]
+
+  // Modules
+  destinations   Destination[]
+  accommodations Accommodation[]
+  fashionItems   Fashion[]
+  vehicles       Vehicle[]
+  culinaries     Culinary[]
+  tourGuides     TourGuide[]
+  groceries      Grocery[]
+  documentations Documentation[]
+
+  @@map("tenants")
+}
+
+model TenantDomain {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  domain    String   @unique
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([domain])
+  @@map("tenant_domains")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  avatarUrl    String?    @map("avatar_url")
+  phone        String?
+  isSuperadmin Boolean    @default(false) @map("is_superadmin")
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  userTenants  UserTenant[]
+  activityLogs ActivityLog[]
+  mediaUploads Media[]
+
+  // Author relations for modules
+  createdDestinations   Destination[] @relation("DestinationCreatedBy")
+  updatedDestinations   Destination[] @relation("DestinationUpdatedBy")
+  publishedDestinations Destination[] @relation("DestinationPublishedBy")
+
+  createdAccommodations   Accommodation[] @relation("AccommodationCreatedBy")
+  updatedAccommodations   Accommodation[] @relation("AccommodationUpdatedBy")
+  publishedAccommodations Accommodation[] @relation("AccommodationPublishedBy")
+
+  createdFashion   Fashion[] @relation("FashionCreatedBy")
+  updatedFashion   Fashion[] @relation("FashionUpdatedBy")
+  publishedFashion Fashion[] @relation("FashionPublishedBy")
+
+  createdVehicles   Vehicle[] @relation("VehicleCreatedBy")
+  updatedVehicles   Vehicle[] @relation("VehicleUpdatedBy")
+  publishedVehicles Vehicle[] @relation("VehiclePublishedBy")
+
+  createdCulinaries   Culinary[] @relation("CulinaryCreatedBy")
+  updatedCulinaries   Culinary[] @relation("CulinaryUpdatedBy")
+  publishedCulinaries Culinary[] @relation("CulinaryPublishedBy")
+
+  createdTourGuides   TourGuide[] @relation("TourGuideCreatedBy")
+  updatedTourGuides   TourGuide[] @relation("TourGuideUpdatedBy")
+  publishedTourGuides TourGuide[] @relation("TourGuidePublishedBy")
+
+  createdGroceries   Grocery[] @relation("GroceryCreatedBy")
+  updatedGroceries   Grocery[] @relation("GroceryUpdatedBy")
+  publishedGroceries Grocery[] @relation("GroceryPublishedBy")
+
+  createdDocumentations   Documentation[] @relation("DocumentationCreatedBy")
+  updatedDocumentations   Documentation[] @relation("DocumentationUpdatedBy")
+  publishedDocumentations Documentation[] @relation("DocumentationPublishedBy")
+
+  requestedApprovals ContentApproval[] @relation("ApprovalRequestedBy")
+  reviewedApprovals  ContentApproval[] @relation("ApprovalReviewedBy")
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  userTenants     UserTenant[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  module      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(cuid())
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserTenant {
+  id        String     @id @default(cuid())
+  userId    String     @map("user_id")
+  tenantId  String     @map("tenant_id")
+  roleId    String     @map("role_id")
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("user_tenants")
+}
+
+// -----------------------------------------------------------------------------
+// FEATURE MANAGEMENT
+// -----------------------------------------------------------------------------
+
+model Feature {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenantFeatures TenantFeature[]
+
+  @@map("features")
+}
+
+model TenantFeature {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  featureKey String   @map("feature_key")
+  isEnabled  Boolean  @default(true) @map("is_enabled")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureKey], references: [key], onDelete: Cascade)
+
+  @@unique([tenantId, featureKey])
+  @@index([tenantId])
+  @@map("tenant_features")
+}
+
+// -----------------------------------------------------------------------------
+// 1. DESTINASI WISATA
+// -----------------------------------------------------------------------------
+
+model Destination {
+  id               String        @id @default(cuid())
+  tenantId         String        @map("tenant_id")
+  name             String
+  slug             String
+  category         String
+  shortDescription String        @map("short_description")
+  description      String
+  address          String
+  city             String
+  province         String
+  latitude         Float?
+  longitude        Float?
+  ticketPrice      Decimal       @default(0) @map("ticket_price") @db.Decimal(12, 2)
+  openingHours     String        @map("opening_hours")
+  facilities       String[]
+  mainImage        String        @map("main_image")
+  gallery          String[]
+  whatsappNumber   String?       @map("whatsapp_number")
+  status           ContentStatus @default(DRAFT)
+  isFeatured       Boolean       @default(false) @map("is_featured")
+  seoTitle         String?       @map("seo_title")
+  seoDescription   String?       @map("seo_description")
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("DestinationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("DestinationUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("DestinationPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([status])
+  @@index([isFeatured])
+  @@index([category])
+  @@map("destinations")
+}
+
+// -----------------------------------------------------------------------------
+// 2. AKOMODASI
+// -----------------------------------------------------------------------------
+
+model Accommodation {
+  id                String        @id @default(cuid())
+  tenantId          String        @map("tenant_id")
+  name              String
+  slug              String
+  accommodationType String        @map("accommodation_type")
+  description       String
+  address           String
+  location          String
+  priceRange        String        @map("price_range")
+  facilities        String[]
+  images            String[]
+  whatsappNumber    String?       @map("whatsapp_number")
+  status            ContentStatus @default(DRAFT)
+  isFeatured        Boolean       @default(false) @map("is_featured")
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("AccommodationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("AccommodationUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("AccommodationPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([status])
+  @@map("accommodations")
+}
+
+// -----------------------------------------------------------------------------
+// 3. FASHION
+// -----------------------------------------------------------------------------
+
+model Fashion {
+  id             String        @id @default(cuid())
+  tenantId       String        @map("tenant_id")
+  name           String
+  slug           String
+  description    String
+  category       String
+  price          Decimal       @default(0) @db.Decimal(12, 2)
+  images         String[]
+  sellerName     String        @map("seller_name")
+  location       String
+  whatsappNumber String?       @map("whatsapp_number")
+  status         ContentStatus @default(DRAFT)
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("FashionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("FashionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("FashionPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([status])
+  @@map("fashion")
+}
+
+// -----------------------------------------------------------------------------
+// 4. KENDARAAN
+// -----------------------------------------------------------------------------
+
+model Vehicle {
+  id             String        @id @default(cuid())
+  tenantId       String        @map("tenant_id")
+  serviceName    String        @map("service_name")
+  vehicleType    String        @map("vehicle_type")
+  description    String
+  rentalPrice    Decimal       @default(0) @map("rental_price") @db.Decimal(12, 2)
+  capacity       Int           @default(4)
+  images         String[]
+  location       String
+  whatsappNumber String?       @map("whatsapp_number")
+  status         ContentStatus @default(DRAFT)
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("VehicleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("VehicleUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("VehiclePublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("vehicles")
+}
+
+// -----------------------------------------------------------------------------
+// 5. KULINER
+// -----------------------------------------------------------------------------
+
+model Culinary {
+  id             String        @id @default(cuid())
+  tenantId       String        @map("tenant_id")
+  name           String
+  slug           String
+  culinaryType   String        @map("culinary_type")
+  description    String
+  address        String
+  location       String
+  menu           String?
+  priceRange     String        @map("price_range")
+  openingHours   String        @map("opening_hours")
+  images         String[]
+  whatsappNumber String?       @map("whatsapp_number")
+  status         ContentStatus @default(DRAFT)
+  isFeatured     Boolean       @default(false) @map("is_featured")
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("CulinaryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("CulinaryUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("CulinaryPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([status])
+  @@map("culinary")
+}
+
+// -----------------------------------------------------------------------------
+// 6. GUIDE / TOUR GUIDE
+// -----------------------------------------------------------------------------
+
+model TourGuide {
+  id              String        @id @default(cuid())
+  tenantId        String        @map("tenant_id")
+  name            String
+  profileImage    String?       @map("profile_image")
+  description     String
+  experienceYears Int           @default(1) @map("experience_years")
+  languages       String[]
+  expertise       String
+  portfolio       String?
+  location        String
+  whatsappNumber  String?       @map("whatsapp_number")
+  status          ContentStatus @default(DRAFT)
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("TourGuideCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("TourGuideUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("TourGuidePublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("tour_guides")
+}
+
+// -----------------------------------------------------------------------------
+// 7. SEMBAKO
+// -----------------------------------------------------------------------------
+
+model Grocery {
+  id             String        @id @default(cuid())
+  tenantId       String        @map("tenant_id")
+  storeName      String        @map("store_name")
+  description    String
+  products       String
+  address        String
+  images         String[]
+  whatsappNumber String?       @map("whatsapp_number")
+  status         ContentStatus @default(DRAFT)
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("GroceryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("GroceryUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("GroceryPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("groceries")
+}
+
+// -----------------------------------------------------------------------------
+// 8. DOKUMENTASI
+// -----------------------------------------------------------------------------
+
+model Documentation {
+  id                String        @id @default(cuid())
+  tenantId          String        @map("tenant_id")
+  title             String
+  description       String
+  documentationType String        @map("documentation_type")
+  mediaUrl          String        @map("media_url")
+  gallery           String[]
+  eventDate         DateTime?     @map("event_date")
+  location          String?
+  socialMediaLink   String?       @map("social_media_link")
+  status            ContentStatus @default(DRAFT)
+
+  createdById   String    @map("created_by")
+  updatedById   String    @map("updated_by")
+  publishedById String?   @map("published_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  publishedAt   DateTime? @map("published_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("DocumentationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User   @relation("DocumentationUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  publishedBy User?  @relation("DocumentationPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("documentations")
+}
+
+// -----------------------------------------------------------------------------
+// MEDIA STORAGE
+// -----------------------------------------------------------------------------
+
+model Media {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  uploadedById     String   @map("uploaded_by")
+  originalFilename String   @map("original_filename")
+  storageKey       String   @map("storage_key")
+  mimeType         String   @map("mime_type")
+  fileSize         Int      @map("file_size")
+  url              String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([uploadedById])
+  @@map("media")
+}
+
+// -----------------------------------------------------------------------------
+// SYSTEM & SETTINGS
+// -----------------------------------------------------------------------------
+
+model WebsiteSetting {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique @map("tenant_id")
+  siteName       String   @map("site_name")
+  logoUrl        String?  @map("logo_url")
+  faviconUrl     String?  @map("favicon_url")
+  brandColor     String   @default("#533afd") @map("brand_color")
+  heroTitle      String?  @map("hero_title")
+  heroSubtitle   String?  @map("hero_subtitle")
+  heroBannerUrl  String?  @map("hero_banner_url")
+  contactEmail   String?  @map("contact_email")
+  contactPhone   String?  @map("contact_phone")
+  contactAddress String?  @map("contact_address")
+  seoTitle       String?  @map("seo_title")
+  seoDescription String?  @map("seo_description")
+  socialLinks    Json?    @map("social_links")
+  approvalActive Boolean  @default(false) @map("approval_active")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("website_settings")
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  tenantId    String?  @map("tenant_id")
+  actorUserId String   @map("actor_user_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User    @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([actorUserId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model ContentApproval {
+  id              String         @id @default(cuid())
+  tenantId        String         @map("tenant_id")
+  entityType      String         @map("entity_type")
+  entityId        String         @map("entity_id")
+  requestedById   String         @map("requested_by_id")
+  reviewedById    String?        @map("reviewed_by_id")
+  status          ApprovalStatus @default(PENDING)
+  rejectionReason String?        @map("rejection_reason")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestedBy User   @relation("ApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  reviewedBy  User?  @relation("ApprovalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("content_approvals")
+}

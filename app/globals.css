@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #533afd;
+  --color-primary-deep: #4434d4;
+  --color-primary-press: #2e2b8c;
+  --color-primary-soft: #665efd;
+  --color-primary-subdued: #b9b9f9;
+  --color-brand-dark: #1c1e54;
+  --color-ink: #0d253d;
+  --color-ink-secondary: #273951;
+  --color-ink-mute: #64748d;
+  --color-ink-mute-2: #61718a;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #f6f9fc;
+  --color-canvas-cream: #f5e9d4;
+  --color-hairline: #e3e8ee;
+  --color-hairline-input: #a8c3de;
+  --color-ruby: #ea2261;
+  --color-magenta: #f96bee;
+  --color-lemon: #9b6829;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+
+  --shadow-level-1: 0 1px 3px rgba(0, 55, 112, 0.08);
+  --shadow-level-2: 0 8px 24px rgba(0, 55, 112, 0.08), 0 2px 6px rgba(0, 55, 112, 0.04);
+
+  --background: #ffffff;
+  --foreground: #0d253d;
+}
+
+* {
+  border-color: #e3e8ee;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  font-feature-settings: "ss01" on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular figures for money, count, dates, tables */
+.tnum,
+.tabular-nums {
+  font-feature-settings: "tnum" on;
+}
+
+/* Stripe Display Headings (Weight 300 + Negative Tracking) */
+.display-xxl {
+  font-size: 56px;
+  line-height: 1.03;
+  font-weight: 300;
+  letter-spacing: -1.4px;
+}
+
+.display-xl {
+  font-size: 48px;
+  line-height: 1.15;
+  font-weight: 300;
+  letter-spacing: -0.96px;
+}
+
+.display-lg {
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 300;
+  letter-spacing: -0.64px;
+}
+
+.display-md {
+  font-size: 26px;
+  line-height: 1.12;
+  font-weight: 300;
+  letter-spacing: -0.26px;
+}
+
+.heading-lg {
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 300;
+  letter-spacing: -0.22px;
+}
+
+.heading-md {
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 300;
+  letter-spacing: -0.2px;
+}
+
+.heading-sm {
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 300;
+  letter-spacing: 0;
+}
+
+/* Atmospheric Stripe Gradient Mesh for Hero sections */
+.stripe-hero-mesh {
+  background:
+    radial-gradient(ellipse at 15% 0%, #f5e9d4 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 15%, #ea2261 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 0%, #f96bee 0%, transparent 45%),
+    radial-gradient(ellipse at 40% 35%, #b9b9f9 0%, transparent 40%),
+    radial-gradient(ellipse at 95% 45%, #533afd 0%, transparent 50%),
+    radial-gradient(ellipse at 10% 40%, #ffcba4 0%, transparent 45%),
+    #ffffff;
+  background-size: 100% 100%;
+}
+
+/* Stripe Pill Button Styles */
+.btn-pill-primary {
+  background-color: #533afd;
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-pill-primary:hover {
+  background-color: #4434d4;
+  transform: translateY(-0.5px);
+}
+
+.btn-pill-primary:active {
+  background-color: #2e2b8c;
+  transform: translateY(0);
+}
+
+.btn-pill-secondary {
+  background-color: #ffffff;
+  color: #533afd;
+  border: 1px solid #e3e8ee;
+  border-radius: 9999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-pill-secondary:hover {
+  border-color: #a8c3de;
+  background-color: #f6f9fc;
+}
+
+.btn-pill-dark {
+  background-color: #1c1e54;
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-pill-dark:hover {
+  background-color: #12143b;
+}
+
+/* Card Surface Utilities */
+.card-feature {
+  background-color: #ffffff;
+  border: 1px solid #e3e8ee;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 55, 112, 0.08);
+}
+
+.card-cream {
+  background-color: #f5e9d4;
+  border-radius: 12px;
+  color: #0d253d;
+}
+
+.card-dark {
+  background-color: #1c1e54;
+  color: #ffffff;
+  border-radius: 12px;
+}
