@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, hasTenantAccess } from "@/lib/auth";
 import { resolveCurrentTenant } from "@/lib/tenant/resolver";
 import { db } from "@/lib/db";
 
@@ -18,8 +18,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Tenant tidak ditemukan" }, { status: 404 });
     }
 
+    // Unpublished content is only visible to the tenant's own staff
+    const user = await getCurrentUser();
+    const isStaff = !!user && hasTenantAccess(user, tenant.id);
+
     const items = await db.getDestinations({
       tenantId: tenant.id,
+      status: isStaff ? undefined : "PUBLISHED",
       category,
       search,
     });
@@ -38,9 +43,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const tenant = await resolveCurrentTenant();
+    const body = await request.json();
+
+    // The dashboard sends its web segment (web-a/web-b/web-c); host/cookie resolution is the fallback.
+    const tenant = await resolveCurrentTenant(typeof body.web === "string" ? body.web : undefined);
     if (!tenant) {
       return NextResponse.json({ error: "Tenant tidak ditemukan" }, { status: 404 });
+    }
+
+    if (!hasTenantAccess(sessionUser, tenant.id)) {
+      return NextResponse.json(
+        { error: "Anda tidak memiliki akses ke website ini." },
+        { status: 403 }
+      );
     }
 
     // Verify feature module is enabled for this tenant
@@ -52,7 +67,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
     const {
       name,
       category,

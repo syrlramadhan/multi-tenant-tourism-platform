@@ -7,7 +7,9 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx tests/system-test.ts"
+    "test": "tsx --env-file-if-exists=.env.local tests/system-test.ts",
+    "db:seed:dummy": "tsx --env-file-if-exists=.env.local prisma/seed-dummy.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -24,6 +26,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@next/env": "16.4.6",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",

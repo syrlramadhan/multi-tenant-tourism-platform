@@ -4,18 +4,24 @@ import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatIndonesianDateTime } from "@/lib/utils";
+import { DEFAULT_PAGE_SIZE, PaginationBar, pageHref, requestedPage, type PageSearchParams } from "@/components/ui/pagination";
 
 export default async function CMSActivityLogsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ web: string }>;
+  searchParams: PageSearchParams;
 }) {
   const { web } = await params;
   const tenant = await resolveCurrentTenant(web);
   if (!tenant) return <div>Tenant tidak ditemukan.</div>;
 
-  const logs = await db.getActivityLogs(tenant.id, 100);
-  const users = await db.getUsers(tenant.id);
+  const [result, users] = await Promise.all([
+    db.getActivityLogsPage({ tenantId: tenant.id, page: await requestedPage(searchParams), pageSize: DEFAULT_PAGE_SIZE }),
+    db.getUsers(tenant.id),
+  ]);
+  const logs = result.items;
   const userMap = new Map(users.map((u) => [u.id, u]));
 
   return (
@@ -72,6 +78,14 @@ export default async function CMSActivityLogsPage({
           </tbody>
         </table>
       </Card>
+
+      <PaginationBar
+        page={result.page}
+        pageSize={DEFAULT_PAGE_SIZE}
+        total={result.total}
+        noun="log"
+        hrefForPage={pageHref(`/${web}/dashboard/activity-logs`)}
+      />
     </div>
   );
 }

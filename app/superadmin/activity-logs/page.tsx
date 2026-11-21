@@ -5,11 +5,15 @@ import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatIndonesianDateTime } from "@/lib/utils";
+import { DEFAULT_PAGE_SIZE, PaginationBar, pageHref, requestedPage, type PageSearchParams } from "@/components/ui/pagination";
 
-export default async function SuperadminActivityLogsPage() {
-  const logs = await db.getActivityLogs(undefined, 100);
-  const tenants = await db.getTenants();
-  const users = await db.getUsers();
+export default async function SuperadminActivityLogsPage({ searchParams }: { searchParams: PageSearchParams }) {
+  const [result, tenants, users] = await Promise.all([
+    db.getActivityLogsPage({ page: await requestedPage(searchParams), pageSize: DEFAULT_PAGE_SIZE }),
+    db.getTenants(),
+    db.getUsers(),
+  ]);
+  const logs = result.items;
 
   const tenantMap = new Map(tenants.map((t) => [t.id, t]));
   const userMap = new Map(users.map((u) => [u.id, u]));
@@ -84,6 +88,14 @@ export default async function SuperadminActivityLogsPage() {
           </tbody>
         </table>
       </Card>
+
+      <PaginationBar
+        page={result.page}
+        pageSize={DEFAULT_PAGE_SIZE}
+        total={result.total}
+        noun="log"
+        hrefForPage={pageHref("/superadmin/activity-logs")}
+      />
     </div>
   );
 }

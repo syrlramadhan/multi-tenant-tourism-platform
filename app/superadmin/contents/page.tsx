@@ -1,61 +1,28 @@
 import React from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { db } from "@/lib/db";
+import { db, type ContentOverviewItem } from "@/lib/db";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { UploaderAvatar } from "@/components/shared/uploader-avatar";
+import { DEFAULT_PAGE_SIZE, PaginationBar, pageHref, requestedPage, type PageSearchParams } from "@/components/ui/pagination";
 
-export default async function SuperadminContentsPage() {
-  const tenants = await db.getTenants();
-  const destinations = await db.getDestinations();
-  const accommodations = await db.getAccommodations();
-  const culinaries = await db.getCulinaries();
-  const vehicles = await db.getVehicles();
-  const users = await db.getUsers();
+const MODULE_LABELS: Record<ContentOverviewItem["module"], string> = {
+  destinations: "Destinasi Wisata",
+  accommodations: "Akomodasi",
+  culinary: "Kuliner",
+  vehicles: "Kendaraan",
+};
+
+export default async function SuperadminContentsPage({ searchParams }: { searchParams: PageSearchParams }) {
+  const [result, tenants, users] = await Promise.all([
+    db.getContentOverviewPage({ page: await requestedPage(searchParams), pageSize: DEFAULT_PAGE_SIZE }),
+    db.getTenants(),
+    db.getUsers(),
+  ]);
 
   const userMap = new Map(users.map((u) => [u.id, u]));
   const tenantMap = new Map(tenants.map((t) => [t.id, t]));
-
-  // Combine items into unified global overview
-  const allContents = [
-    ...destinations.map((d) => ({
-      id: d.id,
-      tenantId: d.tenantId,
-      title: d.name,
-      module: "Destinasi Wisata",
-      status: d.status,
-      createdById: d.createdById,
-      createdAt: d.createdAt,
-    })),
-    ...accommodations.map((a) => ({
-      id: a.id,
-      tenantId: a.tenantId,
-      title: a.name,
-      module: "Akomodasi",
-      status: a.status,
-      createdById: a.createdById,
-      createdAt: a.createdAt,
-    })),
-    ...culinaries.map((c) => ({
-      id: c.id,
-      tenantId: c.tenantId,
-      title: c.name,
-      module: "Kuliner",
-      status: c.status,
-      createdById: c.createdById,
-      createdAt: c.createdAt,
-    })),
-    ...vehicles.map((v) => ({
-      id: v.id,
-      tenantId: v.tenantId,
-      title: v.serviceName,
-      module: "Kendaraan",
-      status: v.status,
-      createdById: v.createdById,
-      createdAt: v.createdAt,
-    })),
-  ];
 
   return (
     <div className="space-y-6">
@@ -90,7 +57,7 @@ export default async function SuperadminContentsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e3e8ee]">
-            {allContents.map((c) => {
+            {result.items.map((c) => {
               const author = userMap.get(c.createdById);
               const tenant = tenantMap.get(c.tenantId);
 
@@ -108,7 +75,7 @@ export default async function SuperadminContentsPage() {
                       <span>{tenant?.name || c.tenantId}</span>
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-[#64748d]">{c.module}</td>
+                  <td className="py-3 px-4 text-[#64748d]">{MODULE_LABELS[c.module]}</td>
                   <td className="py-3 px-4">
                     <UploaderAvatar
                       name={author?.name || "Pengguna"}
@@ -126,6 +93,14 @@ export default async function SuperadminContentsPage() {
           </tbody>
         </table>
       </Card>
+
+      <PaginationBar
+        page={result.page}
+        pageSize={DEFAULT_PAGE_SIZE}
+        total={result.total}
+        noun="konten"
+        hrefForPage={pageHref("/superadmin/contents")}
+      />
     </div>
   );
 }

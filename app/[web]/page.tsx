@@ -17,14 +17,29 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { WhatsAppButton } from "@/components/shared/whatsapp-button";
+import { PaginationBar } from "@/components/ui/pagination";
 import { formatRupiah, formatIndonesianDate } from "@/lib/utils";
+
+// Each section paginates on its own query param, named after the section's anchor id (e.g. ?kuliner=2).
+const SECTION_PAGE_SIZE = {
+  destinasi: 6,
+  akomodasi: 4,
+  kuliner: 4,
+  kendaraan: 4,
+  fashion: 5,
+  "tour-guides": 5,
+} as const;
+type SectionId = keyof typeof SECTION_PAGE_SIZE;
 
 export default async function PublicWebPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ web: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { web } = await params;
+  const query = await searchParams;
   if (!["web-a", "web-b", "web-c"].includes(web)) {
     notFound();
   }
@@ -34,35 +49,65 @@ export default async function PublicWebPage({
     notFound();
   }
 
-  const allUsers = await db.getUsers();
-  const userMap = new Map(allUsers.map((u) => [u.id, u]));
   const { settings, features } = tenant;
+  const publishedPage = (section: SectionId) => ({
+    tenantId: tenant.id,
+    status: "PUBLISHED" as const,
+    page: Number(query[section]),
+    pageSize: SECTION_PAGE_SIZE[section],
+  });
 
   // Retrieve published content for this tenant
-  const destinations = await db.getDestinations({
-    tenantId: tenant.id,
-    status: "PUBLISHED",
-  });
-  const accommodations = await db.getAccommodations({
-    tenantId: tenant.id,
-    status: "PUBLISHED",
-  });
-  const culinaries = await db.getCulinaries({
-    tenantId: tenant.id,
-    status: "PUBLISHED",
-  });
-  const vehicles = await db.getVehicles({
-    tenantId: tenant.id,
-    status: "PUBLISHED",
-  });
-  const fashionItems = await db.getFashion({
-    tenantId: tenant.id,
-    status: "PUBLISHED",
-  });
-  const tourGuides = await db.getTourGuides({
-    tenantId: tenant.id,
-    status: "PUBLISHED",
-  });
+  const [allUsers, destinationPage, accommodationPage, culinaryPage, vehiclePage, fashionPage, tourGuidePage] =
+    await Promise.all([
+      db.getUsers(),
+      db.getDestinationsPage(publishedPage("destinasi")),
+      db.getAccommodationsPage(publishedPage("akomodasi")),
+      db.getCulinariesPage(publishedPage("kuliner")),
+      db.getVehiclesPage(publishedPage("kendaraan")),
+      db.getFashionPage(publishedPage("fashion")),
+      db.getTourGuidesPage(publishedPage("tour-guides")),
+    ]);
+  const userMap = new Map(allUsers.map((u) => [u.id, u]));
+  const destinations = destinationPage.items;
+  const accommodations = accommodationPage.items;
+  const culinaries = culinaryPage.items;
+  const vehicles = vehiclePage.items;
+  const fashionItems = fashionPage.items;
+  const tourGuides = tourGuidePage.items;
+
+  // Page links keep every other section on the page it currently shows.
+  const currentPages: Record<SectionId, number> = {
+    destinasi: destinationPage.page,
+    akomodasi: accommodationPage.page,
+    kuliner: culinaryPage.page,
+    kendaraan: vehiclePage.page,
+    fashion: fashionPage.page,
+    "tour-guides": tourGuidePage.page,
+  };
+  const sectionPageHref = (section: SectionId) => (page: number) => {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries({ ...currentPages, [section]: page })) {
+      if (value > 1) search.set(key, String(value));
+    }
+    const queryString = search.toString();
+    return `/${web}${queryString ? `?${queryString}` : ""}#${section}`;
+  };
+  const sectionPagination = (
+    section: SectionId,
+    result: { page: number; total: number },
+    noun: string,
+    className?: string
+  ) => (
+    <PaginationBar
+      className={className}
+      page={result.page}
+      pageSize={SECTION_PAGE_SIZE[section]}
+      total={result.total}
+      noun={noun}
+      hrefForPage={sectionPageHref(section)}
+    />
+  );
 
   return (
     <div className="min-h-screen bg-white text-[#0d253d] font-sans selection:bg-[#533afd] selection:text-white flex flex-col">
@@ -190,7 +235,7 @@ export default async function PublicWebPage({
       {/* Main Content Sections */}
       <main className="flex-1 space-y-24 py-16">
         {/* SECTION 1: DESTINASI WISATA */}
-        {features.destinations !== false && destinations.length > 0 && (
+        {features.destinations !== false && destinationPage.total > 0 && (
           <section id="destinasi" className="max-w-7xl mx-auto px-6">
             <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
               <div>
@@ -304,6 +349,8 @@ export default async function PublicWebPage({
                 );
               })}
             </div>
+
+            {sectionPagination("destinasi", destinationPage, "destinasi", "mt-10")}
           </section>
         )}
 
@@ -363,6 +410,8 @@ export default async function PublicWebPage({
                   </div>
                 ))}
               </div>
+
+              {sectionPagination("akomodasi", accommodationPage, "akomodasi")}
             </div>
           </section>
         )}
@@ -417,6 +466,8 @@ export default async function PublicWebPage({
                 </Card>
               ))}
             </div>
+
+            {sectionPagination("kuliner", culinaryPage, "tempat kuliner", "mt-10")}
           </section>
         )}
 
@@ -469,6 +520,8 @@ export default async function PublicWebPage({
                   </div>
                 ))}
               </div>
+
+              {sectionPagination("kendaraan", vehiclePage, "layanan sewa")}
             </div>
           </section>
         )}
@@ -517,6 +570,8 @@ export default async function PublicWebPage({
                   </div>
                 ))}
               </div>
+
+              {sectionPagination("fashion", fashionPage, "produk", "pt-2")}
             </div>
           )}
 
@@ -560,6 +615,8 @@ export default async function PublicWebPage({
                   </div>
                 ))}
               </div>
+
+              {sectionPagination("tour-guides", tourGuidePage, "pemandu", "pt-2")}
             </div>
           )}
         </section>

@@ -62,6 +62,7 @@ export function DestinationForm({
 
     try {
       const payload = {
+        web,
         name,
         category,
         shortDescription,

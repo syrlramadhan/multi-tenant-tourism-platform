@@ -1,6 +1,7 @@
 import React from "react";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { resolveCurrentTenant } from "@/lib/tenant/resolver";
 import { DestinationForm } from "../destination-form";
 
 export default async function EditDestinationPage({
@@ -8,9 +9,10 @@ export default async function EditDestinationPage({
 }: {
   params: Promise<{ id: string; web: string }>;
 }) {
-  const { id } = await params;
+  const { id, web } = await params;
+  const tenant = await resolveCurrentTenant(web);
   const destination = await db.getDestinationById(id);
-  if (!destination) {
+  if (!destination || destination.tenantId !== tenant?.id) {
     notFound();
   }
 

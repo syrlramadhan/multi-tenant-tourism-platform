@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, hasTenantAccess } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function GET(request: Request) {
@@ -13,14 +13,18 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const tenantId = searchParams.get("tenantId") || undefined;
 
-    // Website Admin can only view their own tenant users
-    if (!user.isSuperadmin) {
-      const allowedTenantId = user.tenantMemberships[0]?.tenantId;
-      const users = await db.getUsers(allowedTenantId);
+    if (user.isSuperadmin) {
+      const users = await db.getUsers(tenantId);
       return NextResponse.json(users);
     }
 
-    const users = await db.getUsers(tenantId);
+    // Other roles can only view users of a website they belong to
+    const allowedTenantId = tenantId ?? user.tenantMemberships[0]?.tenantId;
+    if (!allowedTenantId || !hasTenantAccess(user, allowedTenantId)) {
+      return NextResponse.json({ error: "Anda tidak memiliki akses ke website ini." }, { status: 403 });
+    }
+
+    const users = await db.getUsers(allowedTenantId);
     return NextResponse.json(users);
   } catch (error) {
     console.error("Get users error:", error);
@@ -54,18 +58,26 @@ export async function POST(request: Request) {
     }
 
     const memberships: { tenantId: string; role: "SUPERADMIN" | "WEBSITE_ADMIN" | "CONTENT_MANAGER" }[] = [];
-    if (tenantId && role) {
-      // If user is website admin, ensure they cannot add to other tenants
-      if (!sessionUser.isSuperadmin) {
-        const adminTenantId = sessionUser.tenantMemberships[0]?.tenantId;
-        if (adminTenantId !== tenantId) {
-          return NextResponse.json(
-            { error: "Anda tidak memiliki izin mengelola website lain." },
-            { status: 403 }
-          );
-        }
+    if (tenantId) {
+      // Only the website's admins (or Superadmin) may add users to it
+      if (!hasTenantAccess(sessionUser, tenantId, ["WEBSITE_ADMIN"])) {
+        return NextResponse.json(
+          { error: "Anda tidak memiliki izin mengelola pengguna website ini." },
+          { status: 403 }
+        );
+      }
+      if (role !== "WEBSITE_ADMIN" && role !== "CONTENT_MANAGER") {
+        return NextResponse.json({ error: "Peran pengguna tidak valid." }, { status: 400 });
+      }
+      if (!(await db.getTenantById(tenantId))) {
+        return NextResponse.json({ error: "Website tidak ditemukan." }, { status: 404 });
       }
       memberships.push({ tenantId, role });
+    } else if (!sessionUser.isSuperadmin) {
+      return NextResponse.json(
+        { error: "Hanya Superadmin yang dapat membuat pengguna tanpa website." },
+        { status: 403 }
+      );
     }
 
     const passwordHash = bcrypt.hashSync(password, 8);

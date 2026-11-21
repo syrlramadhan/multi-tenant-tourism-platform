@@ -8,6 +8,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { UploaderAvatar } from "@/components/shared/uploader-avatar";
+import { DEFAULT_PAGE_SIZE, PaginationBar } from "@/components/ui/pagination";
 import type { UserData, TenantData } from "@/lib/db/mock-data";
 
 export function SuperadminUsersClient({
@@ -23,6 +24,7 @@ export function SuperadminUsersClient({
   const [users, setUsers] = useState<UserData[]>(initialUsers);
   const [selectedTenant, setSelectedTenant] = useState<string>("ALL");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function SuperadminUsersClient({
     }
     return true;
   });
+  const pageUsers = filteredUsers.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,6 +77,7 @@ export function SuperadminUsersClient({
       }
 
       setUsers((prev) => [data.user, ...prev]);
+      setPage(1);
       setShowModal(false);
       setName("");
       setEmail("");
@@ -133,7 +137,10 @@ export function SuperadminUsersClient({
               type="text"
               placeholder="Cari nama atau email..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="pl-8"
             />
           </div>
@@ -142,7 +149,10 @@ export function SuperadminUsersClient({
             <Filter className="h-3.5 w-3.5" />
             <select
               value={selectedTenant}
-              onChange={(e) => setSelectedTenant(e.target.value)}
+              onChange={(e) => {
+                setSelectedTenant(e.target.value);
+                setPage(1);
+              }}
               className="rounded-full border border-[#a8c3de] bg-white px-3 py-1.5 text-xs text-[#0d253d] focus:outline-none"
             >
               <option value="ALL">Semua Website</option>
@@ -180,7 +190,7 @@ export function SuperadminUsersClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e3e8ee]">
-              {filteredUsers.map((u) => {
+              {pageUsers.map((u) => {
                 return (
                   <tr key={u.id} className="hover:bg-[#f6f9fc]/50 transition-colors">
                     <td className="py-3 px-4">
@@ -250,6 +260,14 @@ export function SuperadminUsersClient({
           </table>
         </div>
       </Card>
+
+      <PaginationBar
+        page={page}
+        pageSize={DEFAULT_PAGE_SIZE}
+        total={filteredUsers.length}
+        noun="pengguna"
+        onPageChange={setPage}
+      />
 
       {/* Create User Modal */}
       {showModal && (

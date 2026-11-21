@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, hasTenantAccess } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function GET(
@@ -11,6 +11,13 @@ export async function GET(
     const item = await db.getDestinationById(id);
     if (!item) {
       return NextResponse.json({ error: "Destinasi tidak ditemukan" }, { status: 404 });
+    }
+    // Unpublished content is only visible to the tenant's own staff
+    if (item.status !== "PUBLISHED") {
+      const user = await getCurrentUser();
+      if (!user || !hasTenantAccess(user, item.tenantId)) {
+        return NextResponse.json({ error: "Destinasi tidak ditemukan" }, { status: 404 });
+      }
     }
     return NextResponse.json(item);
   } catch {
@@ -34,6 +41,10 @@ export async function PUT(
     const existing = await db.getDestinationById(id);
     if (!existing) {
       return NextResponse.json({ error: "Destinasi tidak ditemukan" }, { status: 404 });
+    }
+
+    if (!hasTenantAccess(sessionUser, existing.tenantId)) {
+      return NextResponse.json({ error: "Anda tidak memiliki akses ke website ini." }, { status: 403 });
     }
 
     // Server-side update: strictly updates updatedById to sessionUser.userId
@@ -70,6 +81,10 @@ export async function DELETE(
     const existing = await db.getDestinationById(id);
     if (!existing) {
       return NextResponse.json({ error: "Destinasi tidak ditemukan" }, { status: 404 });
+    }
+
+    if (!hasTenantAccess(sessionUser, existing.tenantId)) {
+      return NextResponse.json({ error: "Anda tidak memiliki akses ke website ini." }, { status: 403 });
     }
 
     await db.deleteDestination(id);

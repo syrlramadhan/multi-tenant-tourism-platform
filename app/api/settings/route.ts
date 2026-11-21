@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, hasTenantAccess } from "@/lib/auth";
 import { resolveCurrentTenant } from "@/lib/tenant/resolver";
 import { db } from "@/lib/db";
 
@@ -8,10 +8,18 @@ export async function POST(request: Request) {
     const sessionUser = await getCurrentUser();
     if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const tenant = await resolveCurrentTenant();
+    const body = await request.json();
+    const tenant =
+      typeof body.tenantId === "string" ? await db.getTenantById(body.tenantId) : await resolveCurrentTenant();
     if (!tenant) return NextResponse.json({ error: "Tenant not found" }, { status: 404 });
 
-    const body = await request.json();
+    if (!hasTenantAccess(sessionUser, tenant.id, ["WEBSITE_ADMIN"])) {
+      return NextResponse.json(
+        { error: "Hanya Website Admin atau Superadmin yang dapat mengubah konfigurasi website." },
+        { status: 403 }
+      );
+    }
+
     await db.updateWebsiteSettings(tenant.id, body);
 
     await db.logActivity({

@@ -1,9 +1,13 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { db } from "../db";
 import type { UserData } from "../db/mock-data";
 
 const SESSION_COOKIE_NAME = "tourism_cms_session";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
+
+type MembershipRole = "WEBSITE_ADMIN" | "CONTENT_MANAGER";
 
 export interface SessionPayload {
   userId: string;
@@ -15,6 +19,14 @@ export interface SessionPayload {
     tenantId: string;
     role: "SUPERADMIN" | "WEBSITE_ADMIN" | "CONTENT_MANAGER";
   }[];
+}
+
+function signSessionData(data: string): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("SESSION_SECRET belum diatur (minimal 32 karakter). Lihat .env.example.");
+  }
+  return createHmac("sha256", secret).update(data).digest("base64url");
 }
 
 /**
@@ -42,27 +54,28 @@ export async function authenticate(
 }
 
 /**
- * Creates authenticated session cookie
+ * Creates authenticated session cookie (HMAC-signed so it cannot be forged or edited)
  */
 export async function createSession(user: UserData) {
   const cookieStore = await cookies();
-  const payload: SessionPayload = {
+  const payload: SessionPayload & { exp: number } = {
     userId: user.id,
     email: user.email,
     name: user.name,
     avatarUrl: user.avatarUrl,
     isSuperadmin: user.isSuperadmin,
     tenantMemberships: user.tenantMemberships,
+    exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
   };
 
-  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64");
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
 
-  cookieStore.set(SESSION_COOKIE_NAME, encoded, {
+  cookieStore.set(SESSION_COOKIE_NAME, `${data}.${signSessionData(data)}`, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 }
 
@@ -75,17 +88,21 @@ export async function clearSession() {
 }
 
 /**
- * Retrieves currently logged-in user from session
+ * Retrieves currently logged-in user from session (null if missing, tampered, or expired)
  */
 export async function getCurrentUser(): Promise<SessionPayload | null> {
-  try {
-    const cookieStore = await cookies();
-    const cookie = cookieStore.get(SESSION_COOKIE_NAME);
-    if (!cookie?.value) return null;
+  const cookieStore = await cookies();
+  const [data, signature] = cookieStore.get(SESSION_COOKIE_NAME)?.value.split(".") ?? [];
+  if (!data || !signature) return null;
 
-    const decoded = Buffer.from(cookie.value, "base64").toString("utf-8");
-    const payload = JSON.parse(decoded) as SessionPayload;
-    return payload;
+  const expected = Buffer.from(signSessionData(data));
+  const actual = Buffer.from(signature);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
+
+  try {
+    const { exp, ...session } = JSON.parse(Buffer.from(data, "base64url").toString("utf-8"));
+    if (typeof exp !== "number" || exp * 1000 < Date.now()) return null;
+    return session as SessionPayload;
   } catch {
     return null;
   }
@@ -103,29 +120,36 @@ export async function requireAuth(): Promise<SessionPayload> {
 }
 
 /**
+ * Whether the user may act on the tenant (optionally limited to roles).
+ * Superadmin always has global access.
+ */
+export function hasTenantAccess(
+  user: SessionPayload,
+  tenantId: string,
+  allowedRoles?: MembershipRole[]
+): boolean {
+  if (user.isSuperadmin) return true;
+  const membership = user.tenantMemberships.find((m) => m.tenantId === tenantId);
+  if (!membership) return false;
+  return !allowedRoles?.length || allowedRoles.includes(membership.role as MembershipRole);
+}
+
+/**
  * Verifies user has access to the specified tenant with appropriate role.
  * Superadmin always bypasses tenant checks with global access.
  */
 export async function requireTenantAccess(
   tenantId: string,
-  allowedRoles?: ("WEBSITE_ADMIN" | "CONTENT_MANAGER")[]
+  allowedRoles?: MembershipRole[]
 ): Promise<SessionPayload> {
   const user = await requireAuth();
 
-  // Superadmin has global privilege across all tenants
-  if (user.isSuperadmin) {
-    return user;
-  }
-
-  const membership = user.tenantMemberships.find((m) => m.tenantId === tenantId);
-  if (!membership) {
+  if (!hasTenantAccess(user, tenantId)) {
     throw new Error("Forbidden: Anda tidak memiliki akses ke website ini.");
   }
 
-  if (allowedRoles && allowedRoles.length > 0) {
-    if (!allowedRoles.includes(membership.role as "WEBSITE_ADMIN" | "CONTENT_MANAGER")) {
-      throw new Error("Forbidden: Peran Anda tidak memiliki izin untuk tindakan ini.");
-    }
+  if (!hasTenantAccess(user, tenantId, allowedRoles)) {
+    throw new Error("Forbidden: Peran Anda tidak memiliki izin untuk tindakan ini.");
   }
 
   return user;

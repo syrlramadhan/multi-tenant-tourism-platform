@@ -1,20 +1,25 @@
 import React from "react";
 import { resolveCurrentTenant } from "@/lib/tenant/resolver";
 import { db } from "@/lib/db";
+import { DEFAULT_PAGE_SIZE, PaginationBar, pageHref, requestedPage, type PageSearchParams } from "@/components/ui/pagination";
 import { ApprovalsClient } from "./approvals-client";
 import type { UserData } from "@/lib/db/mock-data";
 
 export default async function CMSApprovalsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ web: string }>;
+  searchParams: PageSearchParams;
 }) {
   const { web } = await params;
   const tenant = await resolveCurrentTenant(web);
   if (!tenant) return <div>Tenant tidak ditemukan.</div>;
 
-  const approvals = await db.getApprovals(tenant.id);
-  const users = await db.getUsers(tenant.id);
+  const [result, users] = await Promise.all([
+    db.getApprovalsPage({ tenantId: tenant.id, page: await requestedPage(searchParams), pageSize: DEFAULT_PAGE_SIZE }),
+    db.getUsers(tenant.id),
+  ]);
 
   const userMap: Record<string, UserData> = {};
   users.forEach((u) => {
@@ -34,9 +39,19 @@ export default async function CMSApprovalsPage({
         </div>
       </div>
 
+      {/* Keyed by page so the client's local copy of the list resets when the page changes. */}
       <ApprovalsClient
-        initialApprovals={approvals}
+        key={result.page}
+        initialApprovals={result.items}
         userMap={userMap}
+      />
+
+      <PaginationBar
+        page={result.page}
+        pageSize={DEFAULT_PAGE_SIZE}
+        total={result.total}
+        noun="pengajuan"
+        hrefForPage={pageHref(`/${web}/dashboard/approvals`)}
       />
     </div>
   );

@@ -34,6 +34,7 @@ export function SettingsClient({ tenant }: { tenant: TenantData }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          tenantId: tenant.id,
           siteName,
           heroTitle,
           heroSubtitle,

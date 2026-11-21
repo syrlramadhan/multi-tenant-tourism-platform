@@ -5,11 +5,14 @@ import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { UploaderAvatar } from "@/components/shared/uploader-avatar";
+import { DEFAULT_PAGE_SIZE, PaginationBar, pageHref, requestedPage, type PageSearchParams } from "@/components/ui/pagination";
 
 export default async function CMSTourGuidesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ web: string }>;
+  searchParams: PageSearchParams;
 }) {
   const { web } = await params;
   const tenant = await resolveCurrentTenant(web);
@@ -28,8 +31,11 @@ export default async function CMSTourGuidesPage({
     );
   }
 
-  const items = await db.getTourGuides({ tenantId: tenant.id });
-  const users = await db.getUsers(tenant.id);
+  const [result, users] = await Promise.all([
+    db.getTourGuidesPage({ tenantId: tenant.id, page: await requestedPage(searchParams), pageSize: DEFAULT_PAGE_SIZE }),
+    db.getUsers(tenant.id),
+  ]);
+  const items = result.items;
   const userMap = new Map(users.map((u) => [u.id, u]));
 
   return (
@@ -85,6 +91,14 @@ export default async function CMSTourGuidesPage({
           </tbody>
         </table>
       </Card>
+
+      <PaginationBar
+        page={result.page}
+        pageSize={DEFAULT_PAGE_SIZE}
+        total={result.total}
+        noun="pemandu"
+        hrefForPage={pageHref(`/${web}/dashboard/tour-guides`)}
+      />
     </div>
   );
 }

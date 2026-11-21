@@ -29,7 +29,6 @@ export interface UserData {
   id: string;
   name: string;
   email: string;
-  passwordHash: string;
   avatarUrl: string;
   phone: string;
   isSuperadmin: boolean;
@@ -39,6 +38,11 @@ export interface UserData {
     role: "SUPERADMIN" | "WEBSITE_ADMIN" | "CONTENT_MANAGER";
   }[];
   createdAt: string;
+}
+
+// Server-only (login & seeding): never pass this shape to client components.
+export interface UserWithPassword extends UserData {
+  passwordHash: string;
 }
 
 export interface DestinationItem {
@@ -357,7 +361,7 @@ export const INITIAL_TENANTS: TenantData[] = [
   },
 ];
 
-export const INITIAL_USERS: UserData[] = [
+export const INITIAL_USERS: UserWithPassword[] = [
   {
     id: "user-superadmin",
     name: "Syahrul (Superadmin)",

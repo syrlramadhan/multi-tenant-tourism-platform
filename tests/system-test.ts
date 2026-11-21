@@ -1,8 +1,29 @@
 import assert from "node:assert";
-import { db } from "../lib/db";
+import { db, prisma } from "../lib/db";
 import { authenticate } from "../lib/auth";
 import { normalizeWhatsAppNumber, getWhatsAppUrl } from "../lib/utils";
 import { resolveTenantFromWebParam } from "../lib/tenant/resolver";
+
+// The suite runs against a real database: rows it writes get a per-run suffix and are removed afterwards.
+const runId = Date.now().toString(36);
+const cleanupIds = {
+  tenantIds: [] as string[],
+  userIds: [] as string[],
+  destinationIds: [] as string[],
+  approvalIds: [] as string[],
+  logIds: [] as string[],
+  logEntityIds: [] as string[],
+};
+
+async function cleanup() {
+  await prisma.activityLog.deleteMany({
+    where: { OR: [{ id: { in: cleanupIds.logIds } }, { entityId: { in: cleanupIds.logEntityIds } }] },
+  });
+  await prisma.contentApproval.deleteMany({ where: { id: { in: cleanupIds.approvalIds } } });
+  await prisma.destination.deleteMany({ where: { id: { in: cleanupIds.destinationIds } } });
+  await prisma.user.deleteMany({ where: { id: { in: cleanupIds.userIds } } });
+  await prisma.tenant.deleteMany({ where: { id: { in: cleanupIds.tenantIds } } });
+}
 
 async function runTestSuite() {
   console.log("==========================================================");
@@ -109,14 +130,13 @@ async function runTestSuite() {
   // 5. User Quota Limit (Strict MAX 30 Users per Tenant)
   // ---------------------------------------------------------------------------
   await testAsync("5. User Quota: Rejects 31st user when tenant quota is full", async () => {
-    const testTenantId = "tenant-test-quota";
-    await db.createTenant({
+    const quotaTenant = await db.createTenant({
       name: "Tenant Kuota Test",
-      slug: "quota-test",
+      slug: `quota-test-${runId}`,
       description: "Test",
       status: "ACTIVE",
       brandColor: "#533afd",
-      domains: [{ domain: "quota.localhost", isPrimary: true }],
+      domains: [{ domain: `quota-${runId}.localhost`, isPrimary: true }],
       settings: {
         siteName: "Quota Test",
         heroTitle: "Title",
@@ -131,12 +151,14 @@ async function runTestSuite() {
       },
       features: {},
     });
+    cleanupIds.tenantIds.push(quotaTenant.id);
+    const testTenantId = quotaTenant.id;
 
     // Populate exactly 30 users
     for (let i = 1; i <= 30; i++) {
       const res = await db.createUser({
         name: `User ${i}`,
-        email: `quota_user_${i}@test.com`,
+        email: `quota_user_${i}_${runId}@test.com`,
         passwordHash: "hash",
         phone: "081",
         avatarUrl: "",
@@ -145,6 +167,7 @@ async function runTestSuite() {
         tenantMemberships: [{ tenantId: testTenantId, role: "CONTENT_MANAGER" }],
       });
       assert.strictEqual(res.success, true);
+      cleanupIds.userIds.push(res.user!.id);
     }
 
     const count = await db.countTenantUsers(testTenantId);
@@ -153,7 +176,7 @@ async function runTestSuite() {
     // Attempt to create the 31st user -> MUST BE REJECTED!
     const overflowAttempt = await db.createUser({
       name: "User Ke-31",
-      email: "quota_user_31@test.com",
+      email: `quota_user_31_${runId}@test.com`,
       passwordHash: "hash",
       phone: "081",
       avatarUrl: "",
@@ -178,7 +201,7 @@ async function runTestSuite() {
       {
         tenantId: "tenant-a",
         name: "Pantai Eksotis Baru",
-        slug: "pantai-eksotis-baru",
+        slug: `pantai-eksotis-baru-${runId}`,
         category: "Pantai",
         shortDescription: "Pantai indah",
         description: "Deskripsi lengkap",
@@ -196,6 +219,7 @@ async function runTestSuite() {
       },
       originalAuthorId
     );
+    cleanupIds.destinationIds.push(created.id);
 
     assert.strictEqual(created.createdById, originalAuthorId);
     assert.strictEqual(created.updatedById, originalAuthorId);
@@ -218,15 +242,18 @@ async function runTestSuite() {
   // 7. Content Approval Workflow
   // ---------------------------------------------------------------------------
   await testAsync("7. Content Approval: Workflow pending -> approve/reject", async () => {
+    const entityId = `dest-test-appr-${runId}`;
+    cleanupIds.logEntityIds.push(entityId);
     const approval = await db.requestApproval(
       {
         tenantId: "tenant-a",
         entityType: "destinations",
-        entityId: "dest-test-appr",
+        entityId,
         title: "Kawasan Konservasi Laut",
       },
       "user-author-a"
     );
+    cleanupIds.approvalIds.push(approval.id);
 
     assert.strictEqual(approval.status, "PENDING");
     assert.strictEqual(approval.requestedById, "user-author-a");
@@ -248,6 +275,7 @@ async function runTestSuite() {
   // ---------------------------------------------------------------------------
   await testAsync("8. Feature Management: Dynamic module enable/disable", async () => {
     const tenantId = "tenant-a";
+    const originallyEnabled = await db.isFeatureEnabled(tenantId, "fashion");
 
     // Disable fashion module
     await db.updateTenantFeature(tenantId, "fashion", false);
@@ -258,6 +286,8 @@ async function runTestSuite() {
     await db.updateTenantFeature(tenantId, "fashion", true);
     isFashionEnabled = await db.isFeatureEnabled(tenantId, "fashion");
     assert.strictEqual(isFashionEnabled, true);
+
+    await db.updateTenantFeature(tenantId, "fashion", originallyEnabled);
   });
 
   // ---------------------------------------------------------------------------
@@ -271,6 +301,7 @@ async function runTestSuite() {
       entityType: "System",
       description: "Verifikasi pencatatan audit log sistem",
     });
+    cleanupIds.logIds.push(log.id);
 
     assert.ok(log.id);
     const logs = await db.getActivityLogs("tenant-a", 10);
@@ -336,7 +367,12 @@ async function runTestSuite() {
   console.log("==========================================================");
 }
 
-runTestSuite().catch((err) => {
-  console.error("Test failed:", err);
-  process.exit(1);
-});
+runTestSuite()
+  .catch((err) => {
+    console.error("Test failed:", err);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await cleanup();
+    await prisma.$disconnect();
+  });

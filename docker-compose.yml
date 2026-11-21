@@ -1,0 +1,65 @@
+# Production stack for a VPS: PostgreSQL + one-shot migrations + Next.js app.
+#
+#   cp .env.docker.example .env        # fill in the secrets
+#   docker compose up -d --build       # build, migrate, start
+#   docker compose run --rm migrate npx prisma db seed       # optional: base data (3 websites + demo accounts)
+#   docker compose run --rm migrate npm run db:seed:dummy    # optional: large dummy dataset (testing only)
+#   docker compose exec db pg_dump -U tourism tourism_cms > backup.sql
+#
+# The app only listens on 127.0.0.1:${APP_PORT}; put Nginx (with HTTPS) in front of it.
+# Login cookies are marked Secure in production, so the site must be served over HTTPS.
+
+x-database-url: &database-url postgresql://${POSTGRES_USER:-tourism}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-tourism_cms}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tourism}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-tourism_cms}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: *database-url
+      DIRECT_URL: *database-url
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: *database-url
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging: *logging
+
+volumes:
+  pgdata:
